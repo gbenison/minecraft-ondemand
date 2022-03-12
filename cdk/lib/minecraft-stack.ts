@@ -2,16 +2,20 @@ import * as path from 'path';
 import {
   Stack,
   StackProps,
+  aws_cloudwatch_actions as actions,
+  aws_cloudwatch as cloudwatch,
   aws_ec2 as ec2,
   aws_efs as efs,
   aws_iam as iam,
   aws_ecs as ecs,
+  aws_lambda as lambda,
   aws_logs as logs,
   aws_sns as sns,
   RemovalPolicy,
   Arn,
   ArnFormat,
 } from 'aws-cdk-lib';
+
 import { Construct } from 'constructs';
 import { constants } from './constants';
 import { SSMParameterReader } from './ssm-parameter-reader';
@@ -322,5 +326,79 @@ export class MinecraftStack extends Stack {
       ],
     });
     iamRoute53Policy.attachToRole(ecsTaskRole);
+
+    const adminSecurityGroup = new ec2.SecurityGroup(
+      this,
+      'AdminSecurityGroup',
+      {
+        vpc,
+        description: 'Security group for admin EC2 host',
+      });
+      
+    adminSecurityGroup.addIngressRule(
+      ec2.Peer.anyIpv4(),
+      ec2.Port.tcp(22) // SSH
+    );
+
+    // Administrative host for direct access to the EFS file system
+    const adminHost = new ec2.Instance(this, 'AdminHost', {
+      vpc,
+      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MICRO),
+      machineImage: new ec2.AmazonLinuxImage(),
+      vpcSubnets: {subnetType: ec2.SubnetType.PUBLIC},
+      keyName: process.env.ADMIN_KEY_PAIR,
+      securityGroup: adminSecurityGroup
+    });
+
+    /* Allow access to EFS from Admin Host service security group */
+    fileSystem.connections.allowDefaultPortFrom(
+      adminHost
+    );
+
+    const adminIdleMetric = new cloudwatch.Metric({
+      namespace: 'AWS/EC2',
+      metricName: 'NetworkPacketsIn',
+      dimensionsMap: {
+        InstanceId: adminHost.instanceId
+      }
+    });
+
+    const adminIdleAlarm = new cloudwatch.Alarm(this, 'AdminIdleAlarm', {
+      comparisonOperator: cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+      metric: adminIdleMetric,
+      threshold: 15,
+      evaluationPeriods: 3,
+    });
+
+    adminIdleAlarm.addAlarmAction(
+      new actions.Ec2Action(actions.Ec2InstanceAction.STOP),
+    );
+
+    const adminShutdownLambda = new lambda.Function(this, 'AdminShutdownLambda', {
+      code: lambda.Code.fromAsset(path.resolve(__dirname, '../../lambda')),
+      handler: 'admin_shutdown.lambda_handler',
+      runtime: lambda.Runtime.PYTHON_3_8,
+      environment: {
+        REGION: config.serverRegion,
+        INSTANCE_ID: adminHost.instanceId
+      },
+      logRetention: logs.RetentionDays.THREE_DAYS,
+    });
+
+    const adminShutdownPolicy = new iam.Policy(this, 'AdminShutdownPolicy', {
+      statements: [
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['ec2:StopInstances'],
+        resources: [
+          `arn:aws:ec2:${config.serverRegion}:${this.account}:instance/${adminHost.instanceId}`
+        ]
+        })
+      ]
+    });
+
+    if (adminShutdownLambda.role) {
+      adminShutdownPolicy.attachToRole(adminShutdownLambda.role);
+    }
   }
 }

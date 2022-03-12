@@ -1,12 +1,20 @@
+import * as dotenv from 'dotenv';
+import * as path from 'path';
+
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+
+const prefix = (process.env.SUBDOMAIN_PART || 'minecraft').replace(/[^a-zA-Z0-9]/g, '-');
+
 export const constants = {
-  CLUSTER_NAME: 'minecraft',
-  SERVICE_NAME: 'minecraft-server',
-  MC_SERVER_CONTAINER_NAME: 'minecraft-server',
-  WATCHDOG_SERVER_CONTAINER_NAME: 'minecraft-ecsfargate-watchdog',
+  prefix,
+  CLUSTER_NAME: prefix,
+  SERVICE_NAME: prefix + '-server',
+  MC_SERVER_CONTAINER_NAME: prefix + '-server',
+  WATCHDOG_SERVER_CONTAINER_NAME: prefix + '-ecsfargate-watchdog',
   DOMAIN_STACK_REGION: 'us-east-1',
   ECS_VOLUME_NAME: 'data',
-  HOSTED_ZONE_SSM_PARAMETER: 'MinecraftHostedZoneID',
-  LAUNCHER_LAMBDA_ARN_SSM_PARAMETER: 'LauncherLambdaRoleArn',
+  HOSTED_ZONE_SSM_PARAMETER: prefix + 'HostedZoneID',
+  LAUNCHER_LAMBDA_ARN_SSM_PARAMETER: prefix + 'LauncherLambdaRoleArn',
   JAVA_EDITION_DOCKER_IMAGE: 'itzg/minecraft-server',
   BEDROCK_EDITION_DOCKER_IMAGE: 'itzg/minecraft-bedrock-server',
 }

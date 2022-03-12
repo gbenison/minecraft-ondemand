@@ -1,9 +1,6 @@
-import * as dotenv from 'dotenv';
-import * as path from 'path';
+import { constants } from './constants';
 import { MinecraftImageEnv, StackConfig } from './types';
 import { stringAsBoolean } from './util';
-
-dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const resolveMinecraftEnvVars = (json = ''): MinecraftImageEnv => {
   const defaults = { EULA: 'TRUE' };
